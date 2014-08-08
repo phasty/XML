@@ -1,0 +1,20 @@
+{
+    "name" : "phasty/xml",
+    "description" : "PHP for large XML parsing",
+    "keywords" : ["php", "xml", "sax", "fast"],
+    "type" : "library",
+    "license" : "MIT",
+    "authors" : [
+        {
+            "name" : "Dmitry Cheremnykh",
+            "email" : "lockalister@gmail.com"
+        }
+    ],
+    "require" : {
+    },
+    "autoload" : {
+        "psr-4" : {
+            "Phasty\\XML\\" : "src"
+        }
+    }
+}
