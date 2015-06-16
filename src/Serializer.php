@@ -147,13 +147,30 @@ namespace Phasty\XML {
                 // Take name from annotation if has such
                 $childName = isset($annot->nameFrom) && $annot->nameFrom === "child" ? null : $property->getName();
                 // Scalar values may be serialized in properties. Look as annotation
-                if (is_scalar($values) && isset($annot->as) && $annot->as === "attr") {
+                if (isset($annot->as) && $annot->as === "attr") {
+                    if (is_null($values)) {
+                        continue;
+                    }
+                    if (is_object($values)) {
+                        if (is_callable([ $values, "__toString" ])) {
+                            $values = "$values";
+                        } else {
+                            // TODO: throw appropriate exception
+                            throw new \Exception("Object of class " . get_class($values) . " cannot be serialized as simple type");
+                        }
+                    }
+                    if (is_array($values)) {
+                        $values = implode(" ", $values);
+                    }
                     $xmlElement->addAttribute($childName, $values);
                     continue;
                 }
                 // Cannot use (array) wrapping due to object to array conversion
                 $values = is_array($values) ? $values : [ $values ];
                 foreach ($values as $value) {
+                    if (is_null($value) && empty($annot->nil)) {
+                        continue;
+                    }
                     // Serialize scalar values directly
                     if (is_scalar($value)) {
                         $xmlElement->addChild($childName, $value);
