@@ -109,7 +109,7 @@ namespace Phasty\XML {
             $classRef = new \ReflectionClass($classFullName);
             $classAnnot = $this->getAnnotation($classRef);
             $className = substr($classFullName, strripos($classFullName, "\\") + 1);
-            $elementName = strtolower($elementName ? $elementName : (isset($classAnnot->name) ? $classAnnot->name : $className));
+            $elementName = $elementName ? $elementName : (isset($classAnnot->name) ? $classAnnot->name : $className);
 
             if ($parent instanceof \SimpleXMLElement) {
                 $xmlElement = $parent->addChild($elementName);
