@@ -7,13 +7,13 @@ namespace Phasty\XML {
      */
     class Serializer {
         protected $config = [
-			"extractClassFrom"	 => "tagName",
-			"classesNamespace"	 => "\\",
-			"skipUnknownObjects" => true,
-			"mapperClasses"		 => []
-		];
+            "extractClassFrom" => "tagName",
+            "classesNamespace" => "\\",
+            "skipUnknownObjects" => true,
+            "mapperClasses" => []
+        ];
 
-		/**
+        /**
          * Unserialize xml string
          *
          * @param string $xml xml string
@@ -43,11 +43,11 @@ namespace Phasty\XML {
                 $elementClassHint = $xsiAttrs["type"];
             }
 			$mapperClass = $this->configValue("mapperClasses", []);
-			if (isset($mapperClass[$elementClassHint])) {
-				$className = $mapperClass[$elementClassHint];
-			} else {
-				$className = $classHint ? $classHint : rtrim($this->configValue("classesNamespace", ""), '\\') . '\\' . $elementClassHint;
-			}
+            if (isset($mapperClass[$elementClassHint])) {
+                $className = $mapperClass[$elementClassHint];
+            } else {
+                $className = $classHint ? $classHint : rtrim($this->configValue("classesNamespace", ""), '\\') . '\\' . $elementClassHint;
+            }
             if (!class_exists($className, true)) {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
