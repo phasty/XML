@@ -42,7 +42,7 @@ namespace Phasty\XML {
                 }
                 $elementClassHint = $xsiAttrs["type"];
             }
-			$mapperClass = $this->configValue("mapperClasses", []);
+            $mapperClass = $this->configValue("mapperClasses", []);
             if (isset($mapperClass[$elementClassHint])) {
                 $className = $mapperClass[$elementClassHint];
             } else {
