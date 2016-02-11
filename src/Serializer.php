@@ -73,9 +73,9 @@ namespace Phasty\XML {
                 $setter = "set" . ucfirst($propertyName);
                 if (!method_exists($classInstance, $setter) && $this->configValue("skipUnknownObjects")) {
                     if (isset($classAnnot->defaultSetter)) {
-						$propertyValue = $this->unserializeXml($child);
+                        $propertyValue = $this->unserializeXml($child);
                         $classInstance->{$classAnnot->defaultSetter}($propertyValue);
-					}
+                    }
                     continue;
                 }
                 $methRef = new \ReflectionMethod($className, $setter);
