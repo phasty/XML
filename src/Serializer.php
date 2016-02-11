@@ -52,8 +52,9 @@ namespace Phasty\XML {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
             $classInstance = new $className;
-            $this->checkNodes($element->attributes(), $className, $classInstance);
-            $this->checkNodes($element->children(),   $className, $classInstance);
+            $classRef = new \ReflectionClass($className);
+            $this->checkNodes($element->attributes(), $className, $classInstance, $classRef);
+            $this->checkNodes($element->children(),   $className, $classInstance, $classRef);
             return $classInstance;
         }
 
@@ -63,12 +64,18 @@ namespace Phasty\XML {
          * @param \SimpleXMLElement $node          Iterable object
          * @param string            $className     Class name to which unserialize object
          * @param mixed             $classInstance Class instance to populate with properties
+         * @param \ReflectionClass  $classRef      Reflection instance for $className
          */
-        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance) {
+        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance, $classRef) {
+            $classAnnot = $this->getAnnotation($classRef);
             foreach ($node as $child) {
                 $propertyName = $child->getName();
                 $setter = "set" . ucfirst($propertyName);
                 if (!method_exists($classInstance, $setter) && $this->configValue("skipUnknownObjects")) {
+                    if (isset($classAnnot->defaultSetter)) {
+						$propertyValue = $this->unserializeXml($child);
+                        $classInstance->{$classAnnot->defaultSetter}($propertyValue);
+					}
                     continue;
                 }
                 $methRef = new \ReflectionMethod($className, $setter);
