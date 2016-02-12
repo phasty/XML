@@ -12,6 +12,8 @@ namespace Phasty\XML {
             "skipUnknownObjects" => true,
             "mapperClasses" => []
         ];
+        
+        protected $classesAnnotation = [];
 
         /**
          * Unserialize xml string
@@ -52,9 +54,8 @@ namespace Phasty\XML {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
             $classInstance = new $className;
-            $classRef = new \ReflectionClass($className);
-            $this->checkNodes($element->attributes(), $className, $classInstance, $classRef);
-            $this->checkNodes($element->children(),   $className, $classInstance, $classRef);
+            $this->checkNodes($element->attributes(), $className, $classInstance);
+            $this->checkNodes($element->children(),   $className, $classInstance);
             return $classInstance;
         }
 
@@ -64,29 +65,42 @@ namespace Phasty\XML {
          * @param \SimpleXMLElement $node          Iterable object
          * @param string            $className     Class name to which unserialize object
          * @param mixed             $classInstance Class instance to populate with properties
-         * @param \ReflectionClass  $classRef      Reflection instance for $className
          */
-        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance, $classRef) {
-            $classAnnot = $this->getAnnotation($classRef);
+        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance) {
             foreach ($node as $child) {
                 $propertyName = $child->getName();
                 $setter = "set" . ucfirst($propertyName);
-                if (!method_exists($classInstance, $setter) && $this->configValue("skipUnknownObjects")) {
-                    if (isset($classAnnot->defaultSetter)) {
-                        $propertyValue = $this->unserializeXml($child);
-                        $classInstance->{$classAnnot->defaultSetter}($propertyValue);
-                    }
-                    continue;
-                }
-                $methRef = new \ReflectionMethod($className, $setter);
-                $hintType = $methRef->getParameters()[0]->getClass();
-                if ($hintType) {
-                    $propertyValue = $this->unserializeXml($child, $hintType->name);
-                    $classInstance->$setter($propertyValue);
+                if (method_exists($classInstance, $setter)) {
+                    $methRef = new \ReflectionMethod($className, $setter);
+                    $hintType = $methRef->getParameters()[0]->getClass();
+                    $propertyValue = ($hintType) ? $this->unserializeXml($child, $hintType->name) : (string) $child;
                 } else {
-                    $classInstance->$setter((string)$child);
+                    $classAnnot = $this->getClassAnnotation($className);
+                    if (isset($classAnnot->defaultSetter)) {
+                        $setter = $classAnnot->defaultSetter;
+                        $propertyValue = $this->unserializeXml($child);
+                    } elseif ($this->configValue("skipUnknownObjects")) {
+                        continue;
+                    } else {
+                        throw new \Exception("Method " . $setter . " not found in class " . $className);
+                    }
                 }
+                $classInstance->$setter($propertyValue);
             }
+        }
+        
+        /**
+         * Get class annotation from cache
+         * 
+         * @param string $className Class name
+         * 
+         * @return mixed false if no annotation or array describing annotation
+         */
+        protected function getClassAnnotation($className) {
+            if (!isset($this->classesAnnotation[$className])) {
+                $this->classesAnnotation[$className] = $this->getAnnotation(new \ReflectionClass($className));
+            }
+            return $this->classesAnnotation[$className];
         }
 
         /**
