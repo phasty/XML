@@ -161,10 +161,7 @@ namespace Phasty\XML {
                     } elseif (is_array($values)) {
                         $values = implode(" ", $values);
                     }
-                    if (isset($annot->maxLength) && $annot->maxLength > 0) {
-                        $values = mb_substr($values, 0, $annot->maxLength);
-                    }
-                    $xmlElement->addAttribute($childName, $values);
+                    $xmlElement->addAttribute($childName, $this->sanitizeValue($values, $annot));
                     continue;
                 }
                 // Cannot use (array) wrapping due to object to array conversion
@@ -175,10 +172,7 @@ namespace Phasty\XML {
                     }
                     // Serialize scalar values directly
                     if (is_scalar($value)) {
-                        if (isset($annot->maxLength) && $annot->maxLength > 0) {
-                            $value = mb_substr($value, 0, $annot->maxLength);
-                        }
-                        $xmlElement->addChild($childName, $value);
+                        $xmlElement->addChild($childName, $this->sanitizeValue($value, $annot));
                     } else {
                         $this->serialize($value, $childName, $xmlElement);
                     }
@@ -199,6 +193,26 @@ namespace Phasty\XML {
                 return false;
             }
             return isset($matches[1]) ? json_decode("{".$matches[1]."}") : [];
+        }
+
+        /**
+         * Sanitize value
+         *
+         * @param string $value value
+         * @param array $annot annotation
+         *
+         * @return string sanitized value
+         */
+        protected function sanitizeValue($value, $annot) {
+            if (isset($annot->maxLength)) {
+                $maxLength = (int) $annot->maxLength;
+                if ($maxLength <= 0) {
+                    throw new \Exception("Incorrect maxLength value: " . $maxLength);
+                }
+                $value = mb_substr($value, 0, $maxLength);
+            }
+
+            return $value;
         }
     }
 }
