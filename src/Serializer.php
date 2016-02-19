@@ -158,9 +158,11 @@ namespace Phasty\XML {
                             // TODO: throw appropriate exception
                             throw new \Exception("Object of class " . get_class($values) . " cannot be serialized as simple type");
                         }
-                    }
-                    if (is_array($values)) {
+                    } elseif (is_array($values)) {
                         $values = implode(" ", $values);
+                    }
+                    if (isset($annot->maxLength) && $annot->maxLength > 0) {
+                        $values = mb_substr($values, 0, $annot->maxLength);
                     }
                     $xmlElement->addAttribute($childName, $values);
                     continue;
@@ -173,6 +175,9 @@ namespace Phasty\XML {
                     }
                     // Serialize scalar values directly
                     if (is_scalar($value)) {
+                        if (isset($annot->maxLength) && $annot->maxLength > 0) {
+                            $value = mb_substr($value, 0, $annot->maxLength);
+                        }
                         $xmlElement->addChild($childName, $value);
                     } else {
                         $this->serialize($value, $childName, $xmlElement);
