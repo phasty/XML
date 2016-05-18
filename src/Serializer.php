@@ -9,8 +9,11 @@ namespace Phasty\XML {
         protected $config = [
             "extractClassFrom" => "tagName",
             "classesNamespace" => "\\",
-            "skipUnknownObjects" => true
+            "skipUnknownObjects" => true,
+            "mapperClasses" => []
         ];
+        
+        protected $classesAnnotation = [];
 
         /**
          * Unserialize xml string
@@ -41,7 +44,12 @@ namespace Phasty\XML {
                 }
                 $elementClassHint = $xsiAttrs["type"];
             }
-            $className = $classHint ? $classHint : rtrim($this->configValue("classesNamespace", ""), '\\') . '\\' . $elementClassHint;
+            $mapperClass = $this->configValue("mapperClasses", []);
+            if (isset($mapperClass[$elementClassHint])) {
+                $className = $mapperClass[$elementClassHint];
+            } else {
+                $className = $classHint ? $classHint : rtrim($this->configValue("classesNamespace", ""), '\\') . '\\' . $elementClassHint;
+            }
             if (!class_exists($className, true)) {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
@@ -62,18 +70,37 @@ namespace Phasty\XML {
             foreach ($node as $child) {
                 $propertyName = $child->getName();
                 $setter = "set" . ucfirst($propertyName);
-                if (!method_exists($classInstance, $setter) && $this->configValue("skipUnknownObjects")) {
-                    continue;
-                }
-                $methRef = new \ReflectionMethod($className, $setter);
-                $hintType = $methRef->getParameters()[0]->getClass();
-                if ($hintType) {
-                    $propertyValue = $this->unserializeXml($child, $hintType->name);
-                    $classInstance->$setter($propertyValue);
+                if (method_exists($classInstance, $setter)) {
+                    $methRef = new \ReflectionMethod($className, $setter);
+                    $hintType = $methRef->getParameters()[0]->getClass();
+                    $propertyValue = ($hintType) ? $this->unserializeXml($child, $hintType->name) : (string) $child;
                 } else {
-                    $classInstance->$setter((string)$child);
+                    $classAnnot = $this->getClassAnnotation($className);
+                    if (isset($classAnnot->defaultSetter)) {
+                        $setter = $classAnnot->defaultSetter;
+                        $propertyValue = $this->unserializeXml($child);
+                    } elseif ($this->configValue("skipUnknownObjects")) {
+                        continue;
+                    } else {
+                        throw new \Exception("Method " . $setter . " not found in class " . $className);
+                    }
                 }
+                $classInstance->$setter($propertyValue);
             }
+        }
+        
+        /**
+         * Get class annotation from cache
+         * 
+         * @param string $className Class name
+         * 
+         * @return mixed false if no annotation or array describing annotation
+         */
+        protected function getClassAnnotation($className) {
+            if (!isset($this->classesAnnotation[$className])) {
+                $this->classesAnnotation[$className] = $this->getAnnotation(new \ReflectionClass($className));
+            }
+            return $this->classesAnnotation[$className];
         }
 
         /**
@@ -109,7 +136,7 @@ namespace Phasty\XML {
             $classRef = new \ReflectionClass($classFullName);
             $classAnnot = $this->getAnnotation($classRef);
             $className = substr($classFullName, strripos($classFullName, "\\") + 1);
-            $elementName = strtolower($elementName ? $elementName : (isset($classAnnot->name) ? $classAnnot->name : $className));
+            $elementName = $elementName ? $elementName : (isset($classAnnot->name) ? $classAnnot->name : $className);
 
             if ($parent instanceof \SimpleXMLElement) {
                 $xmlElement = $parent->addChild($elementName);
@@ -158,14 +185,13 @@ namespace Phasty\XML {
                             // TODO: throw appropriate exception
                             throw new \Exception("Object of class " . get_class($values) . " cannot be serialized as simple type");
                         }
-                    }
-                    if (is_array($values)) {
+                    } elseif (is_array($values)) {
                         $values = implode(" ", $values);
                     }
                     if (isset($annot->name)) {
                         $childName = $annot->name;
                     }
-                    $xmlElement->addAttribute($childName, $values);
+                    $xmlElement->addAttribute($childName, $this->sanitizeValue($values, $annot));
                     continue;
                 }
                 // Cannot use (array) wrapping due to object to array conversion
@@ -176,7 +202,7 @@ namespace Phasty\XML {
                     }
                     // Serialize scalar values directly
                     if (is_scalar($value)) {
-                        $xmlElement->addChild($childName, $value);
+                        $xmlElement->addChild($childName, $this->sanitizeValue($value, $annot));
                     } else {
                         $this->serialize($value, $childName, $xmlElement);
                     }
@@ -197,6 +223,26 @@ namespace Phasty\XML {
                 return false;
             }
             return isset($matches[1]) ? json_decode("{".$matches[1]."}") : [];
+        }
+
+        /**
+         * Sanitize value
+         *
+         * @param string $value value
+         * @param array $annot annotation
+         *
+         * @return string sanitized value
+         */
+        protected function sanitizeValue($value, $annot) {
+            if (isset($annot->maxLength)) {
+                $maxLength = (int) $annot->maxLength;
+                if ($maxLength <= 0) {
+                    throw new \Exception("Incorrect maxLength value: " . $maxLength);
+                }
+                $value = mb_substr($value, 0, $maxLength);
+            }
+
+            return $value;
         }
     }
 }
