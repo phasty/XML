@@ -188,6 +188,9 @@ namespace Phasty\XML {
                     } elseif (is_array($values)) {
                         $values = implode(" ", $values);
                     }
+                    if (isset($annot->name)) {
+                        $childName = $annot->name;
+                    }
                     $xmlElement->addAttribute($childName, $this->sanitizeValue($values, $annot));
                     continue;
                 }
