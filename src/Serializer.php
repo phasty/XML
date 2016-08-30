@@ -197,11 +197,18 @@ namespace Phasty\XML {
                 // Cannot use (array) wrapping due to object to array conversion
                 $values = is_array($values) ? $values : [ $values ];
                 foreach ($values as $value) {
-                    if (is_null($value) && empty($annot->nil)) {
-                        continue;
-                    }
-                    // Serialize scalar values directly
-                    if (is_scalar($value)) {
+                    if (is_null($value)) {
+                        if (empty($annot->nil)) {
+                            continue;
+                        } else {
+                            $xmlElement->addChild($childName)->addAttribute(
+                                "xsi:nil",
+                                "true",
+                                "http://www.w3.org/2001/XMLSchema-instance"
+                            );
+                        }
+                    } elseif (is_scalar($value)) {
+                        // Serialize scalar values directly
                         $xmlElement->addChild($childName, $this->sanitizeValue($value, $annot));
                     } else {
                         $this->serialize($value, $childName, $xmlElement);
