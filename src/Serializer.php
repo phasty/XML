@@ -6,16 +6,13 @@ namespace Phasty\XML {
      * Serializes/unserializes to/from xml
      */
     class Serializer {
-        const ONLY_ELEMENTS = 0;
-        const ONLY_ATTRIBUTES = 1;
-
         protected $config = [
             "extractClassFrom" => "tagName",
             "classesNamespace" => "\\",
             "skipUnknownObjects" => true,
             "mapperClasses" => []
         ];
-
+        
         protected $classesAnnotation = [];
 
         /**
@@ -57,99 +54,9 @@ namespace Phasty\XML {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
             $classInstance = new $className;
-            $this->unserializeChildAttributes($element, $classInstance);
-            $this->unserializeChildElements($element, $classInstance);
+            $this->checkNodes($element->attributes(), $className, $classInstance);
+            $this->checkNodes($element->children(),   $className, $classInstance);
             return $classInstance;
-        }
-
-        /**
-         * Unserialize child elements of node
-         *
-         * @param \SimpleXMLElement $element       Parent element
-         * @param mixed             $classInstance Instance where values to store
-         */
-        protected function unserializeChildElements($element, $classInstance) {
-            $this->checkNodes($element->children(), $classInstance, self::ONLY_ELEMENTS);
-        }
-
-        /**
-         * Unserialize attributes of node
-         *
-         * @param \SimpleXMLElement $element       Parent element
-         * @param mixed             $classInstance Instance where values to store
-         */
-        protected function unserializeChildAttributes($element, $classInstance) {
-            $this->checkNodes($element->attributes(), $classInstance, self::ONLY_ATTRIBUTES);
-        }
-
-        /**
-         * Find property which should be populated from xml property
-         *
-         * @param string  $class        Class name, where property should be found
-         * @param string  $xmlProperty  Name of xml property
-         * @param integer $onlyElOrAttr One of self::ONLY_ELEMENTS, self::ONLY_ATTRIBUTES
-         */
-        protected function findClassPropertyByXMLProperty($class, $xmlProperty, $onlyElOrAttr) {
-            $ref = new \ReflectionClass($class);
-            $qualifiedXmlName = $this->toQualifiedName($xmlProperty);
-            foreach ($ref->getProperties() as $property) {
-                if (false === ($propAnnot = $this->getAnnotation($property))) {
-                    continue;
-                }
-                if ($onlyElOrAttr == self::ONLY_ATTRIBUTES && (empty($propAnnot->as) || $propAnnot->as !== "attr") ||
-                    $onlyElOrAttr == self::ONLY_ELEMENTS && !empty($propAnnot->as) && $propAnnot->as === "attr") {
-                    continue;
-                }
-                if (empty($propAnnot->name) && ucfirst($property->getName()) == $qualifiedXmlName) {
-                    return $property->getName();
-                }
-                if (isset($propAnnot->name) && $propAnnot->name == $xmlProperty) {
-                    return $property->getName();
-                }
-            }
-            return false;
-        }
-
-        /**
-         * Finds setter in class by xml property name
-         *
-         * @param string $class       Class name where to find setter
-         * @param string $xmlProperty Xml property name
-         * @param integer $onlyElOrAttr One of self::ONLY_ELEMENTS, self::ONLY_ATTRIBUTES
-         */
-        protected function getPropertySetter($class, $xmlProperty, $onlyElOrAttr) {
-            // Ищем свойство, которое конвертится в этот xml элемент
-            if ($classProp = $this->findClassPropertyByXMLProperty($class, $xmlProperty, $onlyElOrAttr)) {
-                $setter = "set" . $this->toQualifiedName($classProp);
-                if (method_exists($class, $setter)) {
-                    return $setter;
-                    $methRef = new \ReflectionMethod($class, $setter);
-                    $hintType = $methRef->getParameters()[0]->getClass();
-                    return $hintType ? $this->unserializeXml($child, $hintType->name) : (string) $child;
-                }
-            }
-
-            $classAnnot = $this->getClassAnnotation($class);
-            if (isset($classAnnot->defaultSetter)) {
-                return $classAnnot->defaultSetter;
-                $propertyValue = $this->unserializeXml($child);
-            } elseif ($this->configValue("skipUnknownObjects")) {
-                return false;
-            } else {
-                $type = $onlyElOrAttr == self::ONLY_ELEMENTS ? "element" : "attribute";
-                throw new \Exception("Setter for $type $xmlProperty not found in class " . $class);
-            }
-        }
-
-        /**
-         * Normalizes xml name
-         *
-         * @param string $name XML name
-         *
-         * @return string Normalized name
-         */
-        protected function toQualifiedName($name) {
-            return str_replace('-', '', ucwords($name));
         }
 
         /**
@@ -159,26 +66,34 @@ namespace Phasty\XML {
          * @param string            $className     Class name to which unserialize object
          * @param mixed             $classInstance Class instance to populate with properties
          */
-        protected function checkNodes(\SimpleXMLElement $node, $classInstance, $onlyElOrAttr) {
-            $class = get_class($classInstance);
+        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance) {
             foreach ($node as $child) {
                 $propertyName = $child->getName();
-                $setter = $this->getPropertySetter($class, $propertyName, $onlyElOrAttr);
-                if (!$setter && !$this->configValue("skipUnknownObjects")) {
-                    throw new \Exception("Setter " . $setter . " not found in class " . $class);
+                $setter = "set" . ucfirst($propertyName);
+                if (method_exists($classInstance, $setter)) {
+                    $methRef = new \ReflectionMethod($className, $setter);
+                    $hintType = $methRef->getParameters()[0]->getClass();
+                    $propertyValue = ($hintType) ? $this->unserializeXml($child, $hintType->name) : (string) $child;
+                } else {
+                    $classAnnot = $this->getClassAnnotation($className);
+                    if (isset($classAnnot->defaultSetter)) {
+                        $setter = $classAnnot->defaultSetter;
+                        $propertyValue = $this->unserializeXml($child);
+                    } elseif ($this->configValue("skipUnknownObjects")) {
+                        continue;
+                    } else {
+                        throw new \Exception("Method " . $setter . " not found in class " . $className);
+                    }
                 }
-                $methRef = new \ReflectionMethod($class, $setter);
-                $hintType = $methRef->getParameters()[0]->getClass();
-                $propertyValue = $hintType ? $this->unserializeXml($child, $hintType->name) : (string) $child;
                 $classInstance->$setter($propertyValue);
             }
         }
-
+        
         /**
          * Get class annotation from cache
-         *
+         * 
          * @param string $className Class name
-         *
+         * 
          * @return mixed false if no annotation or array describing annotation
          */
         protected function getClassAnnotation($className) {
@@ -220,8 +135,9 @@ namespace Phasty\XML {
             $classFullName = get_class($object);
             $classRef = new \ReflectionClass($classFullName);
             $classAnnot = $this->getAnnotation($classRef);
-            $className = substr($classFullName, strripos($classFullName, "\\"));
+            $className = substr($classFullName, strripos($classFullName, "\\") + 1);
             $elementName = $elementName ? $elementName : (isset($classAnnot->name) ? $classAnnot->name : $className);
+
             if ($parent instanceof \SimpleXMLElement) {
                 $xmlElement = $parent->addChild($elementName);
             } else {
@@ -256,13 +172,7 @@ namespace Phasty\XML {
                 $values = $object->$getter();
                 // Child element (attribute) name is taken from property name by default.
                 // Take name from annotation if has such
-                if (isset($annot->nameFrom) && $annot->nameFrom === "child") {
-                    $childName = null;
-                } elseif (isset($annot->name)) {
-                    $childName = $annot->name;
-                } else {
-                    $childName = $property->getName();
-                }
+                $childName = isset($annot->nameFrom) && $annot->nameFrom === "child" ? null : $property->getName();
                 // Scalar values may be serialized in properties. Look as annotation
                 if (isset($annot->as) && $annot->as === "attr") {
                     if (is_null($values)) {
