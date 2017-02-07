@@ -13,7 +13,7 @@ namespace Phasty\XML {
             "mapperClasses" => []
         ];
         
-        protected $classesAnnotation = [];
+        protected $classSummaries = [];
 
         /**
          * Unserialize xml string
@@ -54,53 +54,91 @@ namespace Phasty\XML {
                 throw new ClassNotFoundException("Class '$className' not found");
             }
             $classInstance = new $className;
-            $this->checkNodes($element->attributes(), $className, $classInstance);
-            $this->checkNodes($element->children(),   $className, $classInstance);
+            $classSummary  = $this->getClassSummary($className);
+            $attrProps     = [];
+            $childProps    = [];
+            foreach ($classSummary["properties"] as $propertyName => $propertyAnnot) {
+                if (isset($propertyAnnot->as) && $propertyAnnot->as == "attr") {
+                    $attrProps[$propertyName]  = $propertyAnnot;
+                } else {
+                    $childProps[$propertyName] = $propertyAnnot;
+                }
+            }
+            $this->checkNodes($element->attributes(), $className, $classInstance, $classSummary["class"], $attrProps);
+            $this->checkNodes($element->children(),   $className, $classInstance, $classSummary["class"], $childProps);
             return $classInstance;
         }
 
         /**
          * Iterate over xml nodes (attributes or elements) on \SimpleXMLElement
          *
-         * @param \SimpleXMLElement $node          Iterable object
-         * @param string            $className     Class name to which unserialize object
-         * @param mixed             $classInstance Class instance to populate with properties
+         * @param \SimpleXMLElement $node            Iterable object
+         * @param string            $className       Class name to which unserialize object
+         * @param mixed             $classInstance   Class instance to populate with properties
+         * @param \stdClass         $classAnnotation Class annotation
+         * @param array             $propAnnotations Annotations of properties to process
+         *
+         * @throws \Exception
          */
-        protected function checkNodes(\SimpleXMLElement $node, $className, $classInstance) {
+        protected function checkNodes(
+            \SimpleXMLElement $node,
+            $className,
+            $classInstance,
+            $classAnnotation,
+            array $propAnnotations
+        ) {
+            $propIndex = [];
+            foreach ($propAnnotations as $propName => $propAnnot) {
+                $nodeName = isset($propAnnot->name) ? $propAnnot->name : $propName;
+                $propIndex[$nodeName] = $propName;
+            }
             foreach ($node as $child) {
-                $propertyName = $child->getName();
-                $setter = "set" . ucfirst($propertyName);
-                if (method_exists($classInstance, $setter)) {
-                    $methRef = new \ReflectionMethod($className, $setter);
-                    $hintType = $methRef->getParameters()[0]->getClass();
-                    $propertyValue = ($hintType) ? $this->unserializeXml($child, $hintType->name) : (string) $child;
-                } else {
-                    $classAnnot = $this->getClassAnnotation($className);
-                    if (isset($classAnnot->defaultSetter)) {
-                        $setter = $classAnnot->defaultSetter;
-                        $propertyValue = $this->unserializeXml($child);
-                    } elseif ($this->configValue("skipUnknownObjects")) {
-                        continue;
+                $nodeName = $child->getName();
+                $setter   = null;
+                $value    = null;
+                if (!empty($propIndex[$nodeName])) {
+                    $propertyName = $propIndex[$nodeName];
+                    $setter       = "set" . ucfirst($propertyName);
+                    if (method_exists($classInstance, $setter)) {
+                        $methodRef = new \ReflectionMethod($className, $setter);
+                        $hintType  = $methodRef->getParameters()[0]->getClass();
+                        $value     = ($hintType) ? $this->unserializeXml($child, $hintType->name) : (string) $child;
                     } else {
                         throw new \Exception("Method " . $setter . " not found in class " . $className);
                     }
+                } elseif (isset($classAnnotation->defaultSetter))  {
+                    $setter = $classAnnotation->defaultSetter;
+                    $value  = $this->unserializeXml($child);
+                } elseif ($this->configValue("skipUnknownObjects")) {
+                    continue;
+                } else {
+                    throw new \Exception("Method for setting " . $nodeName . " not found in class " . $className);
                 }
-                $classInstance->$setter($propertyValue);
+                $classInstance->$setter($value);
             }
         }
         
         /**
-         * Get class annotation from cache
+         * Get class and its properties annotation from cache
          * 
          * @param string $className Class name
          * 
-         * @return mixed false if no annotation or array describing annotation
+         * @return array Class summary
          */
-        protected function getClassAnnotation($className) {
-            if (!isset($this->classesAnnotation[$className])) {
-                $this->classesAnnotation[$className] = $this->getAnnotation(new \ReflectionClass($className));
+        protected function getClassSummary($className) {
+            if (!isset($this->classSummaries[$className])) {
+                $classRef = new \ReflectionClass($className);
+                $classSummary["class"]      = $this->getAnnotation($classRef);
+                $classSummary["properties"] = [];
+                foreach ($classRef->getProperties() as $propertyRef) {
+                    $propAnnotation = $this->getAnnotation($propertyRef);
+                    if ($propAnnotation !== false) {
+                        $classSummary["properties"][$propertyRef->getName()] = $propAnnotation;
+                    }
+                }
+                $this->classSummaries[$className] = $classSummary;
             }
-            return $this->classesAnnotation[$className];
+            return $this->classSummaries[$className];
         }
 
         /**
