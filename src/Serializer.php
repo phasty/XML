@@ -193,6 +193,8 @@ namespace Phasty\XML {
          * @param \SimpleXMLElement $xmlElement Element to populate in
          */
         protected function serializeProperties($object, $classRef, $xmlElement) {
+            $classAnnotation = $this->getAnnotation($classRef);
+            $skipWhenEmpty = isset($classAnnotation->skipWhenEmpty) ? $classAnnotation->skipWhenEmpty : true;
             foreach ($classRef->getProperties() as $property) {
                 $annot = $this->getAnnotation($property);
                 // this property should not be serialized
@@ -236,7 +238,7 @@ namespace Phasty\XML {
                 $values = is_array($values) ? $values : [ $values ];
                 foreach ($values as $value) {
                     if (is_null($value)) {
-                        if (empty($annot->nil)) {
+                        if (isset($annot->nil) ? !$annot->nil : $skipWhenEmpty) {
                             continue;
                         } else {
                             $xmlElement->addChild($childName)->addAttribute(
